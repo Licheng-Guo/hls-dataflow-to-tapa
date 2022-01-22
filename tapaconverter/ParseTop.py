@@ -2,6 +2,7 @@ import re
 
 from typing import *
 from pycparser import parse_file, c_ast
+from tapaconverter.common import get_fake_type
 
 
 def get_all_template_types(raw_code: str) -> List[str]:
@@ -27,17 +28,11 @@ def get_all_template_types(raw_code: str) -> List[str]:
   return filtered_list
 
 
-def _get_fake_type(template_type: str) -> str:
-  return template_type.replace('<', '_ANGLE_BRACKET_BEG_') \
-                      .replace('>', '_ANGLE_BRACKET_END_') \
-                      .replace('::', '_DOUBLE_COLON_') \
-                      .replace(' ', '_SPACE_')
-
 
 def replace_template_type(raw_code: str, template_type_list: List[str]) -> str:
 
   _replace_template_type = lambda raw_code, template_type: \
-      re.sub(template_type, _get_fake_type(template_type), raw_code)
+      re.sub(template_type, get_fake_type(template_type), raw_code)
 
   for template_type in template_type_list:
     raw_code = _replace_template_type(raw_code, template_type)
@@ -52,7 +47,7 @@ def add_fake_template_types_def(raw_code: str, template_types: List[str]) -> str
   """
   fake_type_def_list = []
   for template_type in template_types:
-    fake_type = _get_fake_type(template_type)
+    fake_type = get_fake_type(template_type)
     fake_type_def = f'typedef struct {fake_type} {{}} {fake_type};'
     fake_type_def_list.append(fake_type_def)
   # fake_type_def_list.append('// end definitions of fake types')
@@ -63,7 +58,7 @@ def add_fake_template_types_def(raw_code: str, template_types: List[str]) -> str
 def replace_template_types(raw_code: str, template_types: List[str]) -> str:
   _temp_code = raw_code
   for type in template_types:
-    fake_type = _get_fake_type(type)
+    fake_type = get_fake_type(type)
     _temp_code = re.sub(type, fake_type, _temp_code)
   
   return _temp_code

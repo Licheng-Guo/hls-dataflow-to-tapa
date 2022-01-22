@@ -3,6 +3,7 @@ import logging
 
 from typing import *
 from pycparser import c_ast, c_generator
+from tapaconverter.common import get_orig_type
 
 generator = c_generator.CGenerator()
 
@@ -71,8 +72,9 @@ class GetTaskVisitor(c_ast.NodeVisitor):
 
 
 class GetPragmaVisitor(c_ast.NodeVisitor):
-  def __init__(self):
+  def __init__(self, ast):
     self.pragma_list: List[Pragma] = []
+    self.visit(ast)
 
   def visit_Pragma(self, node):
     self.pragma_list.append(Pragma(node.string))
@@ -91,15 +93,41 @@ class GetPragmaVisitor(c_ast.NodeVisitor):
     return stream_list
 
 
+class GetStreamVisitor(c_ast.NodeVisitor):
+  def __init__(self, ast):
+    self.stream_to_type = {}
+    self.visit(ast)
+
+  def visit_FuncDecl(self, node):
+    """
+    avoid visiting the decl nodes within a FuncDecl node
+    """
+    return
+
+  def visit_TypeDecl(self, node):
+    """
+    extract the type of stream declarations
+    """
+    if isinstance(node.type, c_ast.IdentifierType):
+      orig_type = get_orig_type(node.type.names[0])
+      stream_match = re.search(r'stream<(.*)>', orig_type)
+      if stream_match:
+        stream_type = stream_match.group(1).strip()
+        self.stream_to_type[node.declname] = stream_type
+
+
 def get_all_tasks(ast: c_ast.FileAST):
   get_task_visitor = GetTaskVisitor()
   get_task_visitor.visit(ast)
   get_task_visitor.dump_task_invoke()
 
 
-def get_stream_depth(ast: c_ast.FileAST):
-  get_pragma_visitor = GetPragmaVisitor()
-  get_pragma_visitor.visit(ast)
+def get_all_streams(ast: c_ast.FileAST):
+  get_pragma_visitor = GetPragmaVisitor(ast)
   stream_list = get_pragma_visitor.get_streams()
+
+  get_stream_visitor = GetStreamVisitor(ast)
+
   for s in stream_list:
+    s.type = get_stream_visitor.stream_to_type[s.name]
     print(s.get_tapa_stream())
