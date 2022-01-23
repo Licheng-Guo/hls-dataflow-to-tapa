@@ -1,7 +1,8 @@
+import logging
 import re
 
 from typing import *
-from pycparser import parse_file, c_ast
+from pycparser import c_parser, c_ast
 from tapaconverter.common import get_fake_type
 
 
@@ -28,7 +29,6 @@ def get_all_template_types(raw_code: str) -> List[str]:
   return filtered_list
 
 
-
 def replace_template_type(raw_code: str, template_type_list: List[str]) -> str:
 
   _replace_template_type = lambda raw_code, template_type: \
@@ -51,8 +51,9 @@ def add_fake_template_types_def(raw_code: str, template_types: List[str]) -> str
     fake_type_def = f'typedef struct {fake_type} {{}} {fake_type};'
     fake_type_def_list.append(fake_type_def)
   # fake_type_def_list.append('// end definitions of fake types')
-  
-  return '\n'.join(fake_type_def_list) + '\n\n' + raw_code
+
+  next_code = fake_type_def_list + raw_code.split('\n')
+  return '\n'.join(next_code)
 
 
 def replace_template_types(raw_code: str, template_types: List[str]) -> str:
@@ -60,13 +61,26 @@ def replace_template_types(raw_code: str, template_types: List[str]) -> str:
   for type in template_types:
     fake_type = get_fake_type(type)
     _temp_code = re.sub(type, fake_type, _temp_code)
-  
+
   return _temp_code
 
-def s2s_func_args(raw_code: str) -> str:
-  _temp_code = raw_code
+def remove_stream_names(raw_code: str) -> str:
+  """
+  to remove the stream name from hls::stream<int> fifo("stream_name");
+  make it C compatible
+  Should be performed before transforming the templates
+  """
+  return re.sub(r'(stream[ ]*<.*>[ ]+[a-zA-Z0-9_]+)\(.*\);', r'\1;', raw_code)
 
+
+def remove_innermost_template_usage(raw_code: str) -> str:
+  """
+  If the code does not include templates, should return the exact same code
+  FIXME: check if any task is templated
+  """
+  _temp_code = raw_code
   template_types = get_all_template_types(raw_code)
+
   _temp_code = replace_template_type(_temp_code, template_types)
   _temp_code = add_fake_template_types_def(_temp_code, template_types)
   _temp_code = replace_template_types(_temp_code, template_types)
@@ -74,15 +88,62 @@ def s2s_func_args(raw_code: str) -> str:
   return _temp_code
 
 
-def get_top_ast(top_path: str) -> c_ast.Node:
+def remove_template_usage(top_func_raw_code: str) -> str:
+  # handle nested template types
+  code_curr = top_func_raw_code
+  count = 0
+  while 1:
+    code_next = remove_innermost_template_usage(code_curr)
+    if code_next == code_curr:
+      break
+    else:
+      count += 1
+      code_curr = code_next
 
+    if count > 10:
+      assert False, 'looping in template conversion for 10 times, most likely fall into a infinite loop'
+  
+  return code_curr
+
+
+def get_top_func(top_path: str, top_name: str) -> str:
+  """
+  extract the top kernel function from the raw file
+  """
   raw_code = open(top_path, 'r').read()
+  
+  match_type = '[a-zA-Z0-9_<>:]+'
+  match_mandatory_space = '[ ]+'
+  match_optional_space = '[ ]*'
+  
+  match = re.search(rf'{match_type}{match_mandatory_space}{top_name}{match_optional_space}\(', raw_code)
+  if not match:
+    logging.error(f'fail to locate the top function')
+    raise NotImplementedError
+  start_index = match.start()
 
-  # FIXME: two passes to handle nested template types
-  s2s_result = s2s_func_args(raw_code)
-  s2s_result = s2s_func_args(s2s_result)
+  raw_code_crop = raw_code[start_index:]
+  stack = 0
+  init_flag = False
+  for i, char in enumerate(raw_code_crop):
+    if char == '{':
+      init_flag = True
+      stack += 1
+    elif char == '}':
+      stack -= 1
+    if init_flag and stack == 0:
+      return raw_code_crop[:i+1]
+  
+  assert False, f'Missing "}}" in the top function'
 
-  # parser = c_parser.CParser()
-  open('test.cpp', 'w').write(s2s_result)
-  ast = parse_file('test.cpp', use_cpp=False, )
+
+def get_top_ast(top_path: str, top_name: str) -> c_ast.Node:
+  _temp_code = get_top_func(top_path, top_name)
+
+  _temp_code = remove_stream_names(_temp_code)
+  _temp_code = remove_template_usage(_temp_code)
+      
+  parser = c_parser.CParser()
+  ast = parser.parse(_temp_code, filename='<none>')
+
   return ast
