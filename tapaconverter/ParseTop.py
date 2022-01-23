@@ -3,7 +3,20 @@ import re
 
 from typing import *
 from pycparser import c_parser, c_ast
-from tapaconverter.common import get_fake_type
+
+
+def get_fake_type(template_type: str) -> str:
+  return template_type.replace('<', '_ANGLE_BRACKET_BEG_') \
+                      .replace('>', '_ANGLE_BRACKET_END_') \
+                      .replace('::', '_DOUBLE_COLON_') \
+                      .replace(' ', '_SPACE_')
+
+
+def get_orig_type(fake_type: str) -> str:
+  return fake_type.replace('_ANGLE_BRACKET_BEG_', '<') \
+                  .replace('_ANGLE_BRACKET_END_', '>') \
+                  .replace('_DOUBLE_COLON_', '::') \
+                  .replace('_SPACE_', ' ')
 
 
 def get_all_template_types(raw_code: str) -> List[str]:
@@ -137,6 +150,18 @@ def get_top_func(top_path: str, top_name: str) -> str:
   assert False, f'Missing "}}" in the top function'
 
 
+class RevertFakeTypeVisitor(c_ast.NodeVisitor):
+  """
+  previous we convert all template types to fake types for the cparser
+  now we modify the ast to revert the types back
+  """
+  def __init__(self, ast):
+    self.visit(ast)
+
+  def visit_IdentifierType(self, node):
+    node.names = list(map(get_orig_type, node.names))
+
+
 def get_top_ast(top_path: str, top_name: str) -> c_ast.Node:
   _temp_code = get_top_func(top_path, top_name)
 
@@ -145,5 +170,6 @@ def get_top_ast(top_path: str, top_name: str) -> c_ast.Node:
       
   parser = c_parser.CParser()
   ast = parser.parse(_temp_code, filename='<none>')
+  RevertFakeTypeVisitor(ast)
 
   return ast

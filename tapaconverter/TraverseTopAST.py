@@ -3,10 +3,14 @@ import logging
 
 from typing import *
 from pycparser import c_ast, c_generator
-from tapaconverter.common import get_orig_type
 
 generator = c_generator.CGenerator()
 
+__all__ = [
+  'get_all_streams',
+  'get_all_tasks',
+  'get_top_args',
+]
 
 class Task:
   def __init__(self, task_name: str, arg_list: List[str]):
@@ -25,6 +29,9 @@ class Stream:
 
 
 class Pragma:
+  """
+  data structure to record the pragmas
+  """
   def __init__(self, pragma_raw: str):
     # remove spaces before and after '='
     pragma_raw = re.sub('[ ]*=[ ]*', '=', pragma_raw)
@@ -51,6 +58,9 @@ class Pragma:
 
 
 class GetTaskVisitor(c_ast.NodeVisitor):
+  """
+  extract all tasks
+  """
   def __init__(self):
     self.task_list:  List[Task] = []
 
@@ -72,6 +82,9 @@ class GetTaskVisitor(c_ast.NodeVisitor):
 
 
 class GetPragmaVisitor(c_ast.NodeVisitor):
+  """
+  extract the depth of streams
+  """
   def __init__(self, ast):
     self.pragma_list: List[Pragma] = []
     self.visit(ast)
@@ -109,11 +122,38 @@ class GetStreamVisitor(c_ast.NodeVisitor):
     extract the type of stream declarations
     """
     if isinstance(node.type, c_ast.IdentifierType):
-      orig_type = get_orig_type(node.type.names[0])
+      orig_type = node.type.names[0]
       stream_match = re.search(r'stream<(.*)>', orig_type)
       if stream_match:
         stream_type = stream_match.group(1).strip()
         self.stream_to_type[node.declname] = stream_type
+
+
+class GetTopParamListVisitor(c_ast.NodeVisitor):
+  """
+  locate the param list node of the top func
+  """
+  def __init__(self, ast):
+    self.top_param_list_node = None
+    self.visit(ast)
+
+  def visit_ParamList(self, node):
+    if not self.top_param_list_node:
+      self.top_param_list_node = node
+      return
+
+
+class GetTopArgsVisitor(c_ast.NodeVisitor):
+  """
+  transform the pointer parameters to tapa::mmap<> parameters
+  """
+  def __init__(self, ast: c_ast.ParamList):
+    self.visit(ast)
+
+  def visit_Decl(self, node):
+    if isinstance(node.type, c_ast.PtrDecl):
+      node.type = node.type.type
+      node.type.type.names = [f'tapa::mmap<{n} >' for n in node.type.type.names]
 
 
 def get_all_tasks(ast: c_ast.FileAST):
@@ -131,3 +171,9 @@ def get_all_streams(ast: c_ast.FileAST):
   for s in stream_list:
     s.type = get_stream_visitor.stream_to_type[s.name]
     print(s.get_tapa_stream())
+
+
+def get_top_args(ast: c_ast.FileAST):
+  top_param_list_node = GetTopParamListVisitor(ast).top_param_list_node
+  GetTopArgsVisitor(top_param_list_node)
+  print(generator.visit(top_param_list_node))
