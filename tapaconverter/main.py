@@ -1,6 +1,6 @@
 import argparse
 
-from tapaconverter.TransformTasks import get_tapa_init_version
+from tapaconverter.TraverseTopAST import get_tapa_init_version
 
 
 if __name__ == '__main__':

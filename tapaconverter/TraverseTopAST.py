@@ -1,9 +1,11 @@
 import re
 import logging
 
+from collections import defaultdict
+from copy import deepcopy
 from typing import *
 from pycparser import c_ast, c_generator
-from tapaconverter.ParseTop import get_top_ast
+from tapaconverter.ParseTop import get_top_ast, get_top_func_range
 
 generator = c_generator.CGenerator()
 
@@ -63,8 +65,9 @@ class GetTaskVisitor(c_ast.NodeVisitor):
   """
   extract all tasks
   """
-  def __init__(self):
+  def __init__(self, ast: c_ast.FileAST):
     self.task_list:  List[Task] = []
+    self.visit(ast)
 
   def visit_FuncCall(self, node):
     task_name = node.name.name
@@ -139,9 +142,10 @@ class GetTapaFuncDefVisitor(c_ast.NodeVisitor):
     self.is_top_func_decl_children = False
     self.top_name = None
     self.top_type = None
-    self.tapa_param_list = None
-    self.visit(ast)
-
+    self.tapa_param_str = None
+    self.mmap_arg_to_type = {}
+    self.visit(deepcopy(ast))
+    
   def _visit_children(self, node):
     for c in node:
       self.visit(c)
@@ -154,7 +158,7 @@ class GetTapaFuncDefVisitor(c_ast.NodeVisitor):
     self._visit_children(node)
     self.is_top_func_decl_children = False
 
-    self.tapa_param_list = generator.visit(node)
+    self.tapa_param_str = generator.visit(node)
 
   def visit_Decl(self, node):
     """
@@ -162,6 +166,14 @@ class GetTapaFuncDefVisitor(c_ast.NodeVisitor):
     """
     if self.is_top_func_decl_children:
       if isinstance(node.type, c_ast.PtrDecl):
+        # record the mmap parameters
+        assert len(node.type.type.type.names) == 1, f'Internal exception when traversing the AST. Found more than one names.'
+
+        # if the type is const
+        prefix = node.type.type.quals[0]+' ' if node.type.type.quals else ''
+        self.mmap_arg_to_type[node.type.type.declname] = f'{prefix}tapa::mmap<{node.type.type.type.names[0]} >'
+
+        # rewrite the AST to change the pointer type to mmap type
         node.type = node.type.type
         node.type.type.names = [f'tapa::mmap<{n} >' for n in node.type.type.names]
         return
@@ -177,20 +189,19 @@ class GetTapaFuncDefVisitor(c_ast.NodeVisitor):
 
     self._visit_children(node)
 
-  def get_tapa_top(self):
-    tapa_top = []
-    
-    tapa_top.append(f'{self.top_type} {self.top_name} (')
-    tapa_params_split = self.tapa_param_list.split(',')
-    tapa_top += [f'    {param.strip()},' for param in tapa_params_split]
-    tapa_top[-1] = tapa_top[-1].replace(',', '')
-    tapa_top.append(')') 
-    return '\n'.join(tapa_top)
+  def get_tapa_top_func_header(self) -> str:
+    tapa_top_func_header = []
+
+    tapa_top_func_header.append(f'{self.top_type} {self.top_name} (')
+    tapa_params_split = self.tapa_param_str.split(',')
+    tapa_top_func_header += [f'    {param.strip()},' for param in tapa_params_split]
+    tapa_top_func_header[-1] = tapa_top_func_header[-1].replace(',', '')
+    tapa_top_func_header.append(')') 
+    return '\n'.join(tapa_top_func_header)
 
 
 def get_all_tasks(ast: c_ast.FileAST):
-  get_task_visitor = GetTaskVisitor()
-  get_task_visitor.visit(ast)
+  get_task_visitor = GetTaskVisitor(ast)
   return get_task_visitor.dump_task_invoke()
 
 
@@ -208,13 +219,72 @@ def get_all_streams(ast: c_ast.FileAST) -> str:
 
 
 def get_tapa_top_header(ast: c_ast.FileAST) -> str:
-  return GetTapaFuncDefVisitor(ast).get_tapa_top()
+  return GetTapaFuncDefVisitor(ast).get_tapa_top_func_header()
 
 
-def get_tapa_top(top_path, top_name) -> str:
-  ast = get_top_ast(top_path, top_name)
+def get_tapa_top(ast: c_ast.FileAST) -> str:
   header = get_tapa_top_header(ast)
   stream_def = get_all_streams(ast)
   task_def = get_all_tasks(ast)
 
   return f'{header} {{\n{stream_def}\n{task_def}}}'
+
+
+def replace_hls_stream(raw_code: str) -> str:
+  _temp_code = raw_code
+  _temp_code = re.sub(r'hls::stream', 'tapa::istream', _temp_code)
+  _temp_code = re.sub(r'read_nb', 'try_read', _temp_code)
+  _temp_code = re.sub(r'write_nb', 'try_write', _temp_code)
+  return _temp_code
+
+def replace_top_func(raw_code: str, top_name: str, tapa_top_func: str) -> str:
+  start_index, end_index = get_top_func_range(raw_code, top_name)
+  return raw_code[:start_index] + tapa_top_func + raw_code[end_index+1:]
+
+
+def replace_task_pointers(raw_code, top_func_ast: c_ast.FileAST) -> str:
+  task_visitor = GetTaskVisitor(top_func_ast)
+  top_func_visitor = GetTapaFuncDefVisitor(top_func_ast)
+
+  mmap_arg_to_type = top_func_visitor.mmap_arg_to_type
+  task_list = task_visitor.task_list
+
+  task_to_param_index_to_type: Dict[str, Dict[int, str]] = defaultdict(dict)
+  for arg, type in mmap_arg_to_type.items():
+    for task in task_list:
+      if arg in task.arg_list:
+        index = task.arg_list.index(arg)
+        task_to_param_index_to_type[task.task_name][index] = type
+
+  # FIXME: remove all comments beforehand
+  for task_name, param_index_to_type in task_to_param_index_to_type.items():
+    for index, type in param_index_to_type.items():
+      match_param_list_str = '[^{]+'
+      match = re.search(rf'[ \n\t]{task_name}[ \n\t]*\(({match_param_list_str})\)', raw_code)
+      param_list_str = match.group(1)
+      param_list_str_range = match.span(1)
+
+      param_list = param_list_str.split(',')
+      assert '*' in param_list[index]
+      param_list[index] = '\n\t' + type + ' ' + param_list[index].split('*')[-1]
+
+      # import pdb; pdb.set_trace()
+
+      raw_code = raw_code[:param_list_str_range[0]] + ','.join(param_list) + raw_code[param_list_str_range[1]:]
+  
+  return raw_code
+
+
+def replace_header_file(raw_code: str) -> str:
+  return re.sub('#include[ ]+(<|")hls_stream.h(>|")', '#include <tapa.h>', raw_code)
+
+
+def get_tapa_init_version(top_path, top_name) -> str:
+  ast = get_top_ast(top_path, top_name)
+  _temp_code = open(top_path, 'r').read()
+  _temp_code = replace_hls_stream(_temp_code)
+  _temp_code = replace_top_func(_temp_code, top_name, get_tapa_top(ast))
+  _temp_code = replace_task_pointers(_temp_code, ast)
+  _temp_code = replace_header_file(_temp_code)
+  return _temp_code
+
