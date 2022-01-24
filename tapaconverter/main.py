@@ -12,6 +12,6 @@ if __name__ == '__main__':
 
   ast = get_top_ast(args.filename, args.top_name)
   # ast.show()
+  get_tapa_top_header(ast)
   get_all_streams(ast)
   get_all_tasks(ast)
-  get_top_args(ast)

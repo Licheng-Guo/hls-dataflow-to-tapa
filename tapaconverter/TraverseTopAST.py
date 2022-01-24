@@ -9,7 +9,7 @@ generator = c_generator.CGenerator()
 __all__ = [
   'get_all_streams',
   'get_all_tasks',
-  'get_top_args',
+  'get_tapa_top_header',
 ]
 
 class Task:
@@ -129,31 +129,61 @@ class GetStreamVisitor(c_ast.NodeVisitor):
         self.stream_to_type[node.declname] = stream_type
 
 
-class GetTopParamListVisitor(c_ast.NodeVisitor):
-  """
-  locate the param list node of the top func
-  """
-  def __init__(self, ast):
-    self.top_param_list_node = None
-    self.visit(ast)
-
-  def visit_ParamList(self, node):
-    if not self.top_param_list_node:
-      self.top_param_list_node = node
-      return
-
-
-class GetTopArgsVisitor(c_ast.NodeVisitor):
+class GetTapaFuncDefVisitor(c_ast.NodeVisitor):
   """
   transform the pointer parameters to tapa::mmap<> parameters
   """
   def __init__(self, ast: c_ast.ParamList):
+    self.is_top_func_decl_children = False
+    self.top_name = None
+    self.top_type = None
+    self.tapa_param_list = None
     self.visit(ast)
 
+  def _visit_children(self, node):
+    for c in node:
+      self.visit(c)
+
+  def visit_ParamList(self, node):
+    """
+    set a mark so that children visit knows we are under a param list
+    """
+    self.is_top_func_decl_children = True
+    self._visit_children(node)
+    self.is_top_func_decl_children = False
+
+    self.tapa_param_list = generator.visit(node)
+
   def visit_Decl(self, node):
-    if isinstance(node.type, c_ast.PtrDecl):
-      node.type = node.type.type
-      node.type.type.names = [f'tapa::mmap<{n} >' for n in node.type.type.names]
+    """
+    since we need to modify a PtrDecl node in the ast, we need to visit the upper level Decl
+    """
+    if self.is_top_func_decl_children:
+      if isinstance(node.type, c_ast.PtrDecl):
+        node.type = node.type.type
+        node.type.type.names = [f'tapa::mmap<{n} >' for n in node.type.type.names]
+        return
+
+    self._visit_children(node)
+
+  def visit_FuncDecl(self, node):
+    """
+    record the top name and type
+    """
+    self.top_name = node.type.declname
+    self.top_type = node.type.type.names[0]
+
+    self._visit_children(node)
+
+  def get_tapa_top(self):
+    tapa_top = []
+    
+    tapa_top.append(f'{self.top_type} {self.top_name} (')
+    tapa_params_split = self.tapa_param_list.split(',')
+    tapa_top += [f'    {param.strip()},' for param in tapa_params_split]
+    tapa_top[-1] = tapa_top[-1].replace(',', '')
+    tapa_top.append(')') 
+    return '\n'.join(tapa_top)
 
 
 def get_all_tasks(ast: c_ast.FileAST):
@@ -173,7 +203,5 @@ def get_all_streams(ast: c_ast.FileAST):
     print(s.get_tapa_stream())
 
 
-def get_top_args(ast: c_ast.FileAST):
-  top_param_list_node = GetTopParamListVisitor(ast).top_param_list_node
-  GetTopArgsVisitor(top_param_list_node)
-  print(generator.visit(top_param_list_node))
+def get_tapa_top_header(ast: c_ast.FileAST):
+  print(GetTapaFuncDefVisitor(ast).get_tapa_top())
