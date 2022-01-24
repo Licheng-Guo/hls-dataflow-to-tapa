@@ -3,6 +3,7 @@ import logging
 
 from typing import *
 from pycparser import c_ast, c_generator
+from tapaconverter.ParseTop import get_top_ast
 
 generator = c_generator.CGenerator()
 
@@ -11,6 +12,7 @@ __all__ = [
   'get_all_tasks',
   'get_tapa_top_header',
 ]
+
 
 class Task:
   def __init__(self, task_name: str, arg_list: List[str]):
@@ -69,7 +71,7 @@ class GetTaskVisitor(c_ast.NodeVisitor):
     arg_list = [generator.visit(arg) for arg in node.args.exprs]
     self.task_list.append(Task(task_name, arg_list))
 
-  def dump_task_invoke(self):
+  def dump_task_invoke(self) -> str:
     buf = []
     buf.append(f'tapa::task()')
     for task in self.task_list:
@@ -78,7 +80,7 @@ class GetTaskVisitor(c_ast.NodeVisitor):
         buf.append(f'          {arg},')
       buf[-1] = buf[-1].replace(',', ')')
     buf.append('  ;')
-    print('\n'.join(buf))
+    return '\n'.join(buf) + '\n'
 
 
 class GetPragmaVisitor(c_ast.NodeVisitor):
@@ -189,19 +191,30 @@ class GetTapaFuncDefVisitor(c_ast.NodeVisitor):
 def get_all_tasks(ast: c_ast.FileAST):
   get_task_visitor = GetTaskVisitor()
   get_task_visitor.visit(ast)
-  get_task_visitor.dump_task_invoke()
+  return get_task_visitor.dump_task_invoke()
 
 
-def get_all_streams(ast: c_ast.FileAST):
+def get_all_streams(ast: c_ast.FileAST) -> str:
   get_pragma_visitor = GetPragmaVisitor(ast)
   stream_list = get_pragma_visitor.get_streams()
 
   get_stream_visitor = GetStreamVisitor(ast)
 
+  stream_def_list = []
   for s in stream_list:
     s.type = get_stream_visitor.stream_to_type[s.name]
-    print(s.get_tapa_stream())
+    stream_def_list.append(s.get_tapa_stream() + '\n')
+  return ''.join(stream_def_list)
 
 
-def get_tapa_top_header(ast: c_ast.FileAST):
-  print(GetTapaFuncDefVisitor(ast).get_tapa_top())
+def get_tapa_top_header(ast: c_ast.FileAST) -> str:
+  return GetTapaFuncDefVisitor(ast).get_tapa_top()
+
+
+def get_tapa_top(top_path, top_name) -> str:
+  ast = get_top_ast(top_path, top_name)
+  header = get_tapa_top_header(ast)
+  stream_def = get_all_streams(ast)
+  task_def = get_all_tasks(ast)
+
+  return f'{header} {{\n{stream_def}\n{task_def}}}'

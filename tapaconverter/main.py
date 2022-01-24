@@ -1,7 +1,6 @@
 import argparse
 
-from tapaconverter.ParseTop import get_top_ast
-from tapaconverter.TraverseTopAST import *
+from tapaconverter.TransformTasks import get_tapa_init_version
 
 
 if __name__ == '__main__':
@@ -10,8 +9,4 @@ if __name__ == '__main__':
   parser.add_argument('--top_name', type=str, required=True )
   args = parser.parse_args()
 
-  ast = get_top_ast(args.filename, args.top_name)
-  # ast.show()
-  get_tapa_top_header(ast)
-  get_all_streams(ast)
-  get_all_tasks(ast)
+  get_tapa_init_version(args.filename, args.top_name)

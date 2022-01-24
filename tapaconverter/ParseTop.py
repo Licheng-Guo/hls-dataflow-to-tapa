@@ -2,7 +2,7 @@ import logging
 import re
 
 from typing import *
-from pycparser import c_parser, c_ast
+from pycparser import c_parser, c_ast, parse_file
 
 
 def get_fake_type(template_type: str) -> str:
@@ -119,11 +119,7 @@ def remove_template_usage(top_func_raw_code: str) -> str:
   return code_curr
 
 
-def get_top_func(top_path: str, top_name: str) -> str:
-  """
-  extract the top kernel function from the raw file
-  """
-  raw_code = open(top_path, 'r').read()
+def get_top_func_range(raw_code: str, top_name: str) -> Tuple[int, int]:
   
   match_type = '[a-zA-Z0-9_<>:]+'
   match_mandatory_space = '[ ]+'
@@ -145,9 +141,18 @@ def get_top_func(top_path: str, top_name: str) -> str:
     elif char == '}':
       stack -= 1
     if init_flag and stack == 0:
-      return raw_code_crop[:i+1]
-  
+      return (start_index, start_index + i)
+
   assert False, f'Missing "}}" in the top function'
+
+
+def get_top_func(top_path: str, top_name: str) -> str:
+  """
+  extract the top kernel function from the raw file
+  """
+  raw_code = open(top_path, 'r').read()
+  start_index, end_index = get_top_func_range(raw_code, top_name)
+  return raw_code[start_index: end_index+1]
 
 
 class RevertFakeTypeVisitor(c_ast.NodeVisitor):
@@ -167,9 +172,9 @@ def get_top_ast(top_path: str, top_name: str) -> c_ast.Node:
 
   _temp_code = remove_stream_names(_temp_code)
   _temp_code = remove_template_usage(_temp_code)
-      
-  parser = c_parser.CParser()
-  ast = parser.parse(_temp_code, filename='<none>')
+  
+  open('/tmp/tapaconverter_fake_top_func.cpp', 'w').write(_temp_code)
+  ast = parse_file('/tmp/tapaconverter_fake_top_func.cpp', use_cpp=True, )
   RevertFakeTypeVisitor(ast)
 
   return ast
