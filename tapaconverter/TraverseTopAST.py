@@ -76,7 +76,7 @@ class GetTaskVisitor(c_ast.NodeVisitor):
 
   def dump_task_invoke(self) -> str:
     buf = []
-    buf.append(f'tapa::task()')
+    buf.append(f'\ttapa::task()')
     for task in self.task_list:
       buf.append(f'  .invoke({task.task_name}, ')
       for arg in task.arg_list:
@@ -170,8 +170,9 @@ class GetTapaFuncDefVisitor(c_ast.NodeVisitor):
         assert len(node.type.type.type.names) == 1, f'Internal exception when traversing the AST. Found more than one names.'
 
         # if the type is const
-        prefix = node.type.type.quals[0]+' ' if node.type.type.quals else ''
-        self.mmap_arg_to_type[node.type.type.declname] = f'{prefix}tapa::mmap<{node.type.type.type.names[0]} >'
+        # Update: do not record if the argument is const. Will cause error in tapacc
+        # prefix = node.type.type.quals[0]+' ' if node.type.type.quals else ''
+        self.mmap_arg_to_type[node.type.type.declname] = f'tapa::mmap<{node.type.type.type.names[0]} >'
 
         # rewrite the AST to change the pointer type to mmap type
         node.type = node.type.type
@@ -214,7 +215,7 @@ def get_all_streams(ast: c_ast.FileAST) -> str:
   stream_def_list = []
   for s in stream_list:
     s.type = get_stream_visitor.stream_to_type[s.name]
-    stream_def_list.append(s.get_tapa_stream() + '\n')
+    stream_def_list.append('\t' + s.get_tapa_stream() + '\n')
   return ''.join(stream_def_list)
 
 
@@ -237,7 +238,8 @@ def replace_hls_stream(raw_code: str) -> str:
   _temp_code = re.sub(r'write_nb', 'try_write', _temp_code)
   return _temp_code
 
-def replace_top_func(raw_code: str, top_name: str, tapa_top_func: str) -> str:
+def replace_top_func(raw_code: str, top_name: str, ast: c_ast.FileAST) -> str:
+  tapa_top_func = get_tapa_top(ast)
   start_index, end_index = get_top_func_range(raw_code, top_name)
   return raw_code[:start_index] + tapa_top_func + raw_code[end_index+1:]
 
@@ -265,10 +267,8 @@ def replace_task_pointers(raw_code, top_func_ast: c_ast.FileAST) -> str:
       param_list_str_range = match.span(1)
 
       param_list = param_list_str.split(',')
-      assert '*' in param_list[index]
+      assert '*' in param_list[index], f'trying to replace a non-pointer argument with tapa::mmap'
       param_list[index] = '\n\t' + type + ' ' + param_list[index].split('*')[-1]
-
-      # import pdb; pdb.set_trace()
 
       raw_code = raw_code[:param_list_str_range[0]] + ','.join(param_list) + raw_code[param_list_str_range[1]:]
   
@@ -283,7 +283,7 @@ def get_tapa_init_version(top_path, top_name) -> str:
   ast = get_top_ast(top_path, top_name)
   _temp_code = open(top_path, 'r').read()
   _temp_code = replace_hls_stream(_temp_code)
-  _temp_code = replace_top_func(_temp_code, top_name, get_tapa_top(ast))
+  _temp_code = replace_top_func(_temp_code, top_name, ast)
   _temp_code = replace_task_pointers(_temp_code, ast)
   _temp_code = replace_header_file(_temp_code)
   return _temp_code
