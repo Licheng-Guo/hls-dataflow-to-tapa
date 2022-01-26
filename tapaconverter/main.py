@@ -1,7 +1,8 @@
 import argparse
 
+from tapaconverter.common import TEMP_FILE_PATH
 from tapaconverter.TraverseTopAST import get_tapa_init_version
-
+from tapaconverter.AnalyzeStreamDirection import extract_and_update_stream_directions
 
 if __name__ == '__main__':
   parser = argparse.ArgumentParser()  
@@ -11,4 +12,8 @@ if __name__ == '__main__':
   args = parser.parse_args()
 
   tapa_cpp = get_tapa_init_version(args.filename, args.top_name)
+
+  open(TEMP_FILE_PATH, 'w').write(tapa_cpp)
+  tapa_cpp = extract_and_update_stream_directions(TEMP_FILE_PATH, args.top_name)
+
   open(args.output, 'w').write(tapa_cpp)

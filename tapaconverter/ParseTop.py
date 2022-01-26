@@ -3,7 +3,7 @@ import re
 
 from typing import *
 from pycparser import c_parser, c_ast, parse_file
-
+from tapaconverter.common import get_func_range
 
 def get_fake_type(template_type: str) -> str:
   return template_type.replace('<', '_ANGLE_BRACKET_BEG_') \
@@ -119,39 +119,12 @@ def remove_template_usage(top_func_raw_code: str) -> str:
   return code_curr
 
 
-def get_top_func_range(raw_code: str, top_name: str) -> Tuple[int, int]:
-  
-  match_type = '[a-zA-Z0-9_<>:]+'
-  match_mandatory_space = '[ ]+'
-  match_optional_space = '[ ]*'
-  
-  match = re.search(rf'{match_type}{match_mandatory_space}{top_name}{match_optional_space}\(', raw_code)
-  if not match:
-    logging.error(f'fail to locate the top function')
-    raise NotImplementedError
-  start_index = match.start()
-
-  raw_code_crop = raw_code[start_index:]
-  stack = 0
-  init_flag = False
-  for i, char in enumerate(raw_code_crop):
-    if char == '{':
-      init_flag = True
-      stack += 1
-    elif char == '}':
-      stack -= 1
-    if init_flag and stack == 0:
-      return (start_index, start_index + i)
-
-  assert False, f'Missing "}}" in the top function'
-
-
 def get_top_func(top_path: str, top_name: str) -> str:
   """
   extract the top kernel function from the raw file
   """
   raw_code = open(top_path, 'r').read()
-  start_index, end_index = get_top_func_range(raw_code, top_name)
+  start_index, end_index = get_func_range(raw_code, top_name)
   return raw_code[start_index: end_index+1]
 
 

@@ -5,7 +5,8 @@ from collections import defaultdict
 from copy import deepcopy
 from typing import *
 from pycparser import c_ast, c_generator
-from tapaconverter.ParseTop import get_top_ast, get_top_func_range
+from tapaconverter.ParseTop import get_top_ast
+from tapaconverter.common import get_func_range
 
 generator = c_generator.CGenerator()
 
@@ -233,14 +234,19 @@ def get_tapa_top(ast: c_ast.FileAST) -> str:
 
 def replace_hls_stream(raw_code: str) -> str:
   _temp_code = raw_code
-  _temp_code = re.sub(r'hls::stream', 'tapa::istream', _temp_code)
+
+  # at this point, we have not yet determined the stream direction, so use a placeholder
+  _temp_code, change_count = re.subn(r'hls::stream', 'tapa::stream', _temp_code)
+  if change_count == 0:
+    logging.error(f'fail to replace hls::stream. Possibly the user has specified "using namespace hls;", not supported yet')
+    raise NotImplementedError
   _temp_code = re.sub(r'read_nb', 'try_read', _temp_code)
   _temp_code = re.sub(r'write_nb', 'try_write', _temp_code)
   return _temp_code
 
 def replace_top_func(raw_code: str, top_name: str, ast: c_ast.FileAST) -> str:
   tapa_top_func = get_tapa_top(ast)
-  start_index, end_index = get_top_func_range(raw_code, top_name)
+  start_index, end_index = get_func_range(raw_code, top_name)
   return raw_code[:start_index] + tapa_top_func + raw_code[end_index+1:]
 
 
