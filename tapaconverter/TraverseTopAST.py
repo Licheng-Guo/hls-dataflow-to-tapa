@@ -285,9 +285,19 @@ def replace_header_file(raw_code: str) -> str:
   return re.sub('#include[ ]+(<|")hls_stream.h(>|")', '#include <tapa.h>', raw_code)
 
 
+def remove_comments(raw_code: str) -> str:
+  raw_code = re.sub('//.*\n', '\n', raw_code)
+  raw_code = re.sub('/\*[\s\S]*\*/', '', raw_code)
+  return raw_code
+
 def get_tapa_init_version(top_path, top_name) -> str:
+  """
+  the result is almost the final tapa code
+  however, the stream directions have not been determined
+  """
   ast = get_top_ast(top_path, top_name)
   _temp_code = open(top_path, 'r').read()
+  _temp_code = remove_comments(_temp_code)
   _temp_code = replace_hls_stream(_temp_code)
   _temp_code = replace_top_func(_temp_code, top_name, ast)
   _temp_code = replace_task_pointers(_temp_code, ast)
