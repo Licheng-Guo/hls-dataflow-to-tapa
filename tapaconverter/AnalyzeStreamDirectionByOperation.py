@@ -9,7 +9,6 @@ import logging
 import re
 import subprocess
 
-from functools import cmp_to_key
 from typing import *
 from tapaconverter.common import get_func_range
 
@@ -87,6 +86,30 @@ class Func:
     self.text = self.text[:self.param_list_range[0]] + all_param_text + self.text[self.param_list_range[1]:]
     self.update_param_list_range()
 
+  def check_and_update_param_type_by_name(self, updated_param_name: str, updated_param_type: str) -> bool:
+    """
+    if already up-to-date, return False. Else return true
+    """
+    if updated_param_name not in self.name_to_param:
+      assert False, f'trying to update a non-existing param: {updated_param_name}'
+    
+    if updated_param_type == self.name_to_param[updated_param_name].param_type:
+      return False
+    else:
+      self.name_to_param[updated_param_name].param_type = updated_param_type
+      self.update_param(self.name_to_param[updated_param_name])
+
+      return True
+
+  def get_text(self) -> str:
+    """
+    FIXME: make sure the text is up-to-date
+    """
+    # self.update_param_list_range()
+    # all_param_text = ', '.join([param.get_text() for param in self.name_to_param.values()])
+    # self.text = self.text[:self.param_list_range[0]] + all_param_text + self.text[self.param_list_range[1]:]
+    return self.text
+
 
 def update_stream_dir_by_operation(func: Func) -> None:
   """
@@ -94,8 +117,7 @@ def update_stream_dir_by_operation(func: Func) -> None:
   stream_param_list = func.get_stream_param_list()
   stream_var_to_dir = func.get_stream_var_to_dir()
   if len(stream_param_list) != len(stream_var_to_dir):
-    logging.error(f'ERROR in {func.name}: have not covered the case where a stream is passed to a sub function call')
-    raise NotImplementedError
+    logging.debug(f'detect sub function calls with stream parameters')
   
   stream_name_to_param: Dict[str, Param] = {param.param_name: param for param in stream_param_list}
   for stream_var, stream_dir in stream_var_to_dir.items():
@@ -123,29 +145,3 @@ def extract_functions(filename: str) -> List[Func]:
   
   return func_list
 
-
-def update_whole_file(whole_file: str, updated_func: Func) -> str:
-  """
-  first determine the range of the function in the whole file
-  then replace
-  """
-  func_range = get_func_range(whole_file, updated_func.name)
-  return whole_file[:func_range[0]] + updated_func.text + whole_file[func_range[1]:]
-
-
-def extract_and_update_stream_directions(filename, top_name) -> str:
-  func_list = extract_functions(filename)
-
-  # sort in reverse order
-  func_compare = lambda x, y : y.func_range[0] - x.func_range[0]
-  func_list = sorted(func_list, key=cmp_to_key(func_compare))
-
-  # filter out the top func
-  func_list = [func for func in func_list if func.name != top_name]
-
-  curr_text = open(filename, 'r').read()
-  for func in func_list:
-    update_stream_dir_by_operation(func)
-    curr_text = update_whole_file(curr_text, func)
-
-  return curr_text
