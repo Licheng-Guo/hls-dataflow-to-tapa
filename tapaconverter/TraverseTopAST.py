@@ -284,6 +284,9 @@ def replace_task_pointers(raw_code, top_func_ast: c_ast.FileAST) -> str:
 def replace_header_file(raw_code: str) -> str:
   return re.sub('#include[ ]+(<|")hls_stream.h(>|")', '#include <tapa.h>', raw_code)
 
+def add_space_around_ref_and_ptr(raw_code: str) -> str:
+  """ prevent troubles in parsing func argument if * and & are attched """
+  return raw_code.replace('&', ' & ').replace('*', ' * ')
 
 def remove_comments(raw_code: str) -> str:
   raw_code = re.sub('//.*\n', '\n', raw_code)
@@ -298,6 +301,7 @@ def get_tapa_init_version(top_path, top_name) -> str:
   ast = get_top_ast(top_path, top_name)
   _temp_code = open(top_path, 'r').read()
   _temp_code = remove_comments(_temp_code)
+  _temp_code = add_space_around_ref_and_ptr(_temp_code)
   _temp_code = replace_hls_stream(_temp_code)
   _temp_code = replace_top_func(_temp_code, top_name, ast)
   _temp_code = replace_task_pointers(_temp_code, ast)
