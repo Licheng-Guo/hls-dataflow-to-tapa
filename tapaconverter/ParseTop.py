@@ -128,6 +128,15 @@ def get_top_func(top_path: str, top_name: str) -> str:
   return raw_code[start_index: end_index+1]
 
 
+def add_type_defs(temp_code: str, top_path: str) -> str:
+  """
+  extract all typedefs to include in the fake top func
+  """
+  raw_code = open(top_path, 'r').read()
+  includes = re.findall('typedef.*;', raw_code) + re.findall('using.*;', raw_code)
+  return '\n'.join(includes) + '\n' + temp_code
+
+
 class RevertFakeTypeVisitor(c_ast.NodeVisitor):
   """
   previous we convert all template types to fake types for the cparser
@@ -143,6 +152,7 @@ class RevertFakeTypeVisitor(c_ast.NodeVisitor):
 def get_top_ast(top_path: str, top_name: str) -> c_ast.Node:
   _temp_code = get_top_func(top_path, top_name)
 
+  _temp_code = add_type_defs(_temp_code, top_path)
   _temp_code = remove_stream_names(_temp_code)
   _temp_code = remove_template_usage(_temp_code)
   
