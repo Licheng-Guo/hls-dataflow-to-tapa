@@ -173,7 +173,7 @@ class GetTapaFuncDefVisitor(c_ast.NodeVisitor):
         # if the type is const
         # Update: do not record if the argument is const. Will cause error in tapacc
         # prefix = node.type.type.quals[0]+' ' if node.type.type.quals else ''
-        self.mmap_arg_to_type[node.type.type.declname] = f'tapa::mmap<{node.type.type.type.names[0]} >'
+        self.mmap_arg_to_type[node.type.type.declname] = f'tapa::mmap<{node.type.type.type.names[0]} >&'
 
         # rewrite the AST to change the pointer type to mmap type
         node.type = node.type.type
