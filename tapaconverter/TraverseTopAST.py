@@ -239,6 +239,7 @@ def replace_hls_stream(raw_code: str) -> str:
   _temp_code, change_count = re.subn(r'hls::stream', 'tapa::stream', _temp_code)
   if change_count == 0:
     logging.error(f'fail to replace hls::stream. Possibly the user has specified "using namespace hls;", not supported yet')
+    import pdb; pdb.set_trace()
     raise NotImplementedError
   _temp_code = re.sub(r'read_nb', 'try_read', _temp_code)
   _temp_code = re.sub(r'write_nb', 'try_write', _temp_code)
@@ -289,9 +290,19 @@ def add_space_around_ref_and_ptr(raw_code: str) -> str:
   return raw_code.replace('&', ' & ').replace('*', ' * ')
 
 def remove_comments(raw_code: str) -> str:
-  raw_code = re.sub('//.*\n', '\n', raw_code)
-  raw_code = re.sub('/\*[\s\S]*\*/', '', raw_code)
-  return raw_code
+  """ from stackoverflow.com/questions/241327/remove-c-and-c-comments-using-python
+  """
+  def replacer(match):
+    s = match.group(0)
+    if s.startswith('/'):
+      return " " # note: a space and not an empty string
+    else:
+      return s
+  pattern = re.compile(
+    r'//.*?$|/\*.*?\*/|\'(?:\\.|[^\\\'])*\'|"(?:\\.|[^\\"])*"',
+    re.DOTALL | re.MULTILINE
+  )
+  return re.sub(pattern, replacer, raw_code)
 
 def get_tapa_init_version(top_path, top_name) -> str:
   """
