@@ -17,11 +17,8 @@ def format_output(filename):
   contents = open(filename, 'r').read()
   
   # remove extra spaces
-  while 1:
-    contents, update_num = re.subn('(\S ) ', '$1', contents)
-    if update_num == 0:
-      break
-  
+  contents = re.sub(r'(\S ) +', r'\1', contents)
+
   # remove extra empty lines
   while 1:
     contents, update_num = re.subn(r'\n\n\n', r'\n\n', contents)
