@@ -289,6 +289,10 @@ def add_space_around_ref_and_ptr(raw_code: str) -> str:
   """ prevent troubles in parsing func argument if * and & are attched """
   return raw_code.replace('&', ' & ').replace('*', ' * ')
 
+def add_extra_newline_to_curly_braces(raw_code: str) -> str:
+  """ prevent troubles in parsing functions """
+  return raw_code.replace('{', '{\n').replace('}', '}\n')
+
 def remove_comments(raw_code: str) -> str:
   """ from stackoverflow.com/questions/241327/remove-c-and-c-comments-using-python
   """
@@ -313,6 +317,7 @@ def get_tapa_init_version(top_path, top_name) -> str:
   _temp_code = open(top_path, 'r').read()
   _temp_code = remove_comments(_temp_code)
   _temp_code = add_space_around_ref_and_ptr(_temp_code)
+  _temp_code = add_extra_newline_to_curly_braces(_temp_code)
   _temp_code = replace_hls_stream(_temp_code)
   _temp_code = replace_top_func(_temp_code, top_name, ast)
   _temp_code = replace_task_pointers(_temp_code, ast)
